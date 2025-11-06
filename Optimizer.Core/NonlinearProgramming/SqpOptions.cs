@@ -86,9 +86,18 @@ namespace Optimizer.Core.NonlinearProgramming
         }
 
         /// <summary>
-        /// Optional hook that receives the state snapshot after each SQP iteration.
+        /// Optional hook that receives per-iteration diagnostics. The callback arguments are
+        /// (iteration index, raw objective, maximum constraint violation, full SQP info snapshot).
         /// </summary>
-        public Action<SqpInfo> ProgressCallback { get; set; }
+        public Action<int, double, double, SqpInfo> ProgressCallback { get; set; }
+            = null;
+
+        /// <summary>
+        /// Maintained for compatibility with earlier builds that expected a single-argument
+        /// progress reporter. When supplied, the delegate is invoked alongside
+        /// <see cref="ProgressCallback"/>.
+        /// </summary>
+        public Action<SqpInfo> ProgressReporter { get; set; }
             = null;
     }
 }

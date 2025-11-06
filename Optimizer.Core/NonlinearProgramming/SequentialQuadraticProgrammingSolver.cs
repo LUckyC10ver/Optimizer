@@ -16,9 +16,9 @@ namespace Optimizer.Core.NonlinearProgramming
             NonlinearProblem problem,
             SqpOptions options,
             out SqpInfo info,
-            Matrix<double> initialHessian = null,
             out Vector<double> multipliers,
-            out IReadOnlyList<int> activeSet)
+            out IReadOnlyList<int> activeSet,
+            Matrix<double> initialHessian = null)
         {
             if (problem == null)
             {
@@ -215,8 +215,8 @@ namespace Optimizer.Core.NonlinearProgramming
             Func<Vector<double>, Vector<double>> gradient,
             IEnumerable<NonlinearConstraint> constraints,
             Vector<double> initialGuess,
-            SqpOptions options,
-            out SqpInfo info)
+            out SqpInfo info,
+            SqpOptions options = null)
         {
             var constraintList = constraints != null
                 ? new List<NonlinearConstraint>(constraints)
@@ -229,7 +229,7 @@ namespace Optimizer.Core.NonlinearProgramming
                 initialGuess,
                 initialGuess?.Count ?? 0);
 
-            return Solve(problem, options, out info, null, out _, out _);
+            return Solve(problem, options, out info, out _, out _, null);
         }
 
         private static double ResolveConstraintTolerance(SqpOptions options)

@@ -249,7 +249,7 @@ namespace Optimizer.Core.QuadraticProgramming
             if (boundMatrix.RowCount > 0)
             {
                 lpMatrix = lpMatrix.Stack(boundMatrix);
-                lpVector = lpVector.Concatenate(boundVector);
+                lpVector = Vector<double>.Build.DenseOfEnumerable(lpVector.Concat(boundVector));
             }
 
             var inequalityArray = ToArray(lpMatrix);

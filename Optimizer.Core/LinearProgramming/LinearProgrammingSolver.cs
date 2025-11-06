@@ -341,11 +341,11 @@ namespace Optimizer.Core.LinearProgramming
                         var m12 = m1 + m2 + 1;
                         if (m12 <= m)
                         {
-                            for (var ip = m12; ip <= m; ip++)
+                            for (var rowIndex = m12; rowIndex <= m; rowIndex++)
                             {
-                                if (iposv[ip - 1] == n + ip)
+                                if (iposv[rowIndex - 1] == n + rowIndex)
                                 {
-                                    Simp1(tableau, ip, l1, nl1, true, out kp, out bmax);
+                                    Simp1(tableau, rowIndex, l1, nl1, true, out kp, out bmax);
                                     if (bmax > eps)
                                     {
                                         goto PhaseOnePivot;
@@ -395,9 +395,9 @@ PhaseOnePivot:
                         }
 
                         nl1--;
-                        for (var is = isIndex; is <= nl1; is++)
+                        for (var listIndex = isIndex; listIndex <= nl1; listIndex++)
                         {
-                            l1[is - 1] = l1[is];
+                            l1[listIndex - 1] = l1[listIndex];
                         }
 
                         tableau[m + 1, kp] += 1.0;

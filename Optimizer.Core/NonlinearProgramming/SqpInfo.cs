@@ -1,38 +1,46 @@
+using System.Text;
+
 namespace Optimizer.Core.NonlinearProgramming
 {
     /// <summary>
-    /// Status information returned by <see cref="RunSqp.runSqp"/>.
+    /// Diagnostic information returned by the SQP solver. The structure mirrors the
+    /// legacy toolbox so that callers can reuse existing post processing code.
     /// </summary>
-    public sealed class SqpInfo
+    public class SqpInfo
     {
-        /// <summary>
-        /// Final objective value (without penalties) reported by the solver.
-        /// </summary>
         public double ObjectiveValue { get; set; }
 
-        /// <summary>
-        /// Number of outer iterations performed.
-        /// </summary>
-        public int IterationCount { get; set; }
+        public int SqpCount { get; set; }
 
-        /// <summary>
-        /// Total number of penalised objective evaluations.
-        /// </summary>
-        public int FunctionEvaluations { get; set; }
+        public int FunctionCount { get; set; }
 
-        /// <summary>
-        /// Estimated norm of the penalised gradient at the final iterate.
-        /// </summary>
-        public double GradientNorm { get; set; }
+        public int GradientCount { get; set; }
 
-        /// <summary>
-        /// Maximum absolute constraint violation measured at the final iterate.
-        /// </summary>
-        public double ConstraintViolation { get; set; }
+        public double StepLength { get; set; } = 1.0;
 
-        /// <summary>
-        /// Textual description of the stop reason.
-        /// </summary>
+        public string QpStatus { get; set; } = string.Empty;
+
         public string Status { get; set; } = string.Empty;
+
+        public override string ToString()
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine($"SQP iterations: {SqpCount}");
+            builder.AppendLine($"Function evaluations: {FunctionCount}");
+            builder.AppendLine($"Gradient evaluations: {GradientCount}");
+            builder.AppendLine($"Last step length: {StepLength}");
+            if (!string.IsNullOrWhiteSpace(QpStatus))
+            {
+                builder.AppendLine($"QP status: {QpStatus}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(Status))
+            {
+                builder.AppendLine($"SQP status: {Status}");
+            }
+
+            builder.AppendLine($"Objective value: {ObjectiveValue}");
+            return builder.ToString();
+        }
     }
 }

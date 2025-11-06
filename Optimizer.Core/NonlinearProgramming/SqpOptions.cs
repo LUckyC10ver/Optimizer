@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 
 namespace Optimizer.Core.NonlinearProgramming
@@ -44,5 +45,50 @@ namespace Optimizer.Core.NonlinearProgramming
         public double PenaltyWeight { get; set; } = 50.0;
 
         public double StepSize { get; set; } = 0.1;
+
+        /// <summary>
+        /// Unified tolerance accessor used by legacy call-sites.
+        /// </summary>
+        public double Tolerance
+        {
+            get => Math.Min(Math.Min(TolArg, TolObj), TolCon);
+            set
+            {
+                TolArg = value;
+                TolObj = value;
+                TolCon = value;
+            }
+        }
+
+        /// <summary>
+        /// Convenience alias for the finite-difference step length.
+        /// </summary>
+        public double FiniteDifferenceStep
+        {
+            get => DiffMinChange;
+            set
+            {
+                DiffMinChange = value;
+                if (DiffMaxChange < value)
+                {
+                    DiffMaxChange = value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Maximum number of SQP iterations allowed before termination.
+        /// </summary>
+        public int MaxIterations
+        {
+            get => MaxFunEvals;
+            set => MaxFunEvals = value;
+        }
+
+        /// <summary>
+        /// Optional hook that receives the state snapshot after each SQP iteration.
+        /// </summary>
+        public Action<SqpInfo> ProgressCallback { get; set; }
+            = null;
     }
 }

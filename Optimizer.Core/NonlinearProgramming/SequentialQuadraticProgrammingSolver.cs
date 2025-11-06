@@ -26,11 +26,17 @@ namespace Optimizer.Core.NonlinearProgramming
             options ??= new SqpOptions();
             info ??= new SqpInfo();
 
-            var maxIterations = options.MaxFunEvals > 0 ? options.MaxFunEvals : 500;
-            var tolerance = Math.Min(Math.Min(options.TolArg, options.TolCon), options.TolObj);
+            var maxIterations = options.MaxIterations > 0
+                ? options.MaxIterations
+                : options.MaxFunEvals > 0 ? options.MaxFunEvals : 500;
+            var tolerance = options.Tolerance > 0
+                ? options.Tolerance
+                : Math.Min(Math.Min(options.TolArg, options.TolCon), options.TolObj);
             var penalty = options.PenaltyWeight;
             var step = options.StepSize;
-            var diffStep = options.DiffMinChange;
+            var diffStep = options.FiniteDifferenceStep > 0
+                ? options.FiniteDifferenceStep
+                : options.DiffMinChange;
 
             var x = problem.InitialGuess.Clone();
             var dimension = x.Count;
@@ -41,7 +47,9 @@ namespace Optimizer.Core.NonlinearProgramming
             double bestViolation = double.PositiveInfinity;
             double bestRawObjective = double.PositiveInfinity;
 
-            multipliers = Vector<double>.Build.Dense(problem.EqualityMatrix?.RowCount ?? 0 + problem.InequalityMatrix?.RowCount ?? 0);
+            var equalityCount = problem.EqualityMatrix?.RowCount ?? 0;
+            var inequalityCount = problem.InequalityMatrix?.RowCount ?? 0;
+            multipliers = Vector<double>.Build.Dense(equalityCount + inequalityCount);
             activeSet = new List<int>();
 
             for (var iteration = 0; iteration < maxIterations; iteration++)
@@ -70,12 +78,15 @@ namespace Optimizer.Core.NonlinearProgramming
 
                 if (gradNorm < tolerance && violation < options.TolCon)
                 {
+                    options.ProgressCallback?.Invoke(info);
                     break;
                 }
 
                 x -= gradient * step;
                 ProjectBounds(problem, x);
                 EnforceLinearEqualities(problem, x);
+
+                options.ProgressCallback?.Invoke(info);
             }
 
             info.ObjectiveValue = bestRawObjective;
@@ -85,6 +96,8 @@ namespace Optimizer.Core.NonlinearProgramming
 
             ExtractActiveSet(problem, constraintEvaluator, best, options, activeSet);
             multipliers = Vector<double>.Build.Dense(activeSet.Count);
+
+            options.ProgressCallback?.Invoke(info);
 
             return best;
         }

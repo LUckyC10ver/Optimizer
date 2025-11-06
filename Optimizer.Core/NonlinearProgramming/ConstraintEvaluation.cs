@@ -3,31 +3,23 @@ using MathNet.Numerics.LinearAlgebra;
 namespace Optimizer.Core.NonlinearProgramming
 {
     /// <summary>
-    /// Represents the result of evaluating nonlinear constraints.
+    /// Represents the evaluation of nonlinear constraints at a given point.
     /// </summary>
     public sealed class ConstraintEvaluation
     {
-        public ConstraintEvaluation(int equalityCount, Vector<double> values)
+        public ConstraintEvaluation(Vector<double> values, int equalityCount, Matrix<double> jacobian = null)
         {
-            EqualityCount = equalityCount;
             Values = values;
+            EqualityCount = equalityCount;
+            Jacobian = jacobian;
         }
 
-        /// <summary>
-        /// Number of leading entries in <see cref="Values"/> that correspond to equality constraints.
-        /// </summary>
-        public int EqualityCount { get; }
-
-        /// <summary>
-        /// Constraint values. The first <see cref="EqualityCount"/> entries represent equalities
-        /// that should evaluate to zero. Remaining entries represent inequalities that should be
-        /// less-or-equal to zero.
-        /// </summary>
         public Vector<double> Values { get; }
 
-        /// <summary>
-        /// Creates a convenience instance with no constraints.
-        /// </summary>
-        public static ConstraintEvaluation Empty => new ConstraintEvaluation(0, Vector<double>.Build.Dense(0));
+        public int EqualityCount { get; }
+
+        public Matrix<double> Jacobian { get; }
+
+        public static ConstraintEvaluation Empty { get; } = new ConstraintEvaluation(null, 0, null);
     }
 }

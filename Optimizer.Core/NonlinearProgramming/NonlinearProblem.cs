@@ -1,57 +1,57 @@
 using System;
 using System.Collections.Generic;
 using MathNet.Numerics.LinearAlgebra;
+using Optimizer.Core.Common;
 
 namespace Optimizer.Core.NonlinearProgramming
 {
-    public class NonlinearProblem
+    /// <summary>
+    /// Represents a generic nonlinear optimisation problem with optional constraints.
+    /// </summary>
+    public sealed class NonlinearProblem
     {
+        public NonlinearProblem(
+            Func<Vector<double>, double> objective,
+            Func<Vector<double>, Vector<double>> gradient,
+            IReadOnlyCollection<NonlinearConstraint> constraints,
+            Vector<double> initialGuess,
+            Vector<double> lowerBounds = null,
+            Vector<double> upperBounds = null,
+            Matrix<double> equalityMatrix = null,
+            Vector<double> equalityVector = null,
+            Matrix<double> inequalityMatrix = null,
+            Vector<double> inequalityVector = null)
+        {
+            Objective = objective ?? throw new OptimizationException("An objective function must be supplied.");
+            Gradient = gradient;
+            Constraints = constraints ?? Array.Empty<NonlinearConstraint>();
+            InitialGuess = initialGuess ?? throw new OptimizationException("An initial guess is required.");
+            LowerBounds = lowerBounds;
+            UpperBounds = upperBounds;
+            EqualityMatrix = equalityMatrix;
+            EqualityVector = equalityVector;
+            InequalityMatrix = inequalityMatrix;
+            InequalityVector = inequalityVector;
+        }
+
         public Func<Vector<double>, double> Objective { get; }
 
         public Func<Vector<double>, Vector<double>> Gradient { get; }
 
-        public IReadOnlyList<NonlinearConstraint> Constraints { get; }
+        public IReadOnlyCollection<NonlinearConstraint> Constraints { get; }
 
         public Vector<double> InitialGuess { get; }
-
-        public int VariableCount { get; }
-
-        public Matrix<double> LinearEqualityMatrix { get; }
-
-        public Vector<double> LinearEqualityVector { get; }
-
-        public Matrix<double> LinearInequalityMatrix { get; }
-
-        public Vector<double> LinearInequalityVector { get; }
 
         public Vector<double> LowerBounds { get; }
 
         public Vector<double> UpperBounds { get; }
 
-        public NonlinearProblem(
-            Func<Vector<double>, double> objective,
-            Func<Vector<double>, Vector<double>> gradient,
-            IReadOnlyList<NonlinearConstraint> constraints,
-            Vector<double> initialGuess,
-            int variableCount,
-            Matrix<double> linearEqualityMatrix = null,
-            Vector<double> linearEqualityVector = null,
-            Matrix<double> linearInequalityMatrix = null,
-            Vector<double> linearInequalityVector = null,
-            Vector<double> lowerBounds = null,
-            Vector<double> upperBounds = null)
-        {
-            Objective = objective;
-            Gradient = gradient;
-            Constraints = constraints ?? new List<NonlinearConstraint>();
-            InitialGuess = initialGuess;
-            VariableCount = variableCount;
-            LinearEqualityMatrix = linearEqualityMatrix;
-            LinearEqualityVector = linearEqualityVector;
-            LinearInequalityMatrix = linearInequalityMatrix;
-            LinearInequalityVector = linearInequalityVector;
-            LowerBounds = lowerBounds;
-            UpperBounds = upperBounds;
-        }
+        public Matrix<double> EqualityMatrix { get; }
+
+        public Vector<double> EqualityVector { get; }
+
+        public Matrix<double> InequalityMatrix { get; }
+
+        public Vector<double> InequalityVector { get; }
     }
 }

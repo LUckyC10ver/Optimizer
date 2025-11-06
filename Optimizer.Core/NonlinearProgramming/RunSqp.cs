@@ -6,28 +6,10 @@ using Optimizer.Core.Common;
 namespace Optimizer.Core.NonlinearProgramming
 {
     /// <summary>
-    /// Public entry point that mirrors the classic C++ signature "runSqp".
+    /// Facade mirroring the historical SQP entry point while exposing convenient helpers for managed callers.
     /// </summary>
     public static class RunSqp
     {
-        /// <summary>
-        /// Executes the simplified SQP-style optimisation routine.
-        /// </summary>
-        /// <param name="xout">Vector that will receive the final solution.</param>
-        /// <param name="info">Structure that will be populated with diagnostic information.</param>
-        /// <param name="lambda">Lagrange multiplier estimates. The vector is resized as needed.</param>
-        /// <param name="act_ind">Indices of active constraints at the final iterate.</param>
-        /// <param name="obj">Objective function delegate. Must return the function value for the supplied point.</param>
-        /// <param name="lb">Lower bounds for the decision variables. May be <c>null</c>.</param>
-        /// <param name="ub">Upper bounds for the decision variables. May be <c>null</c>.</param>
-        /// <param name="Aequ">Matrix of linear equality constraints.</param>
-        /// <param name="bequ">Right-hand side of the linear equality constraints.</param>
-        /// <param name="Aieq">Matrix of linear inequality constraints.</param>
-        /// <param name="bieq">Right-hand side of the linear inequality constraints.</param>
-        /// <param name="X_orig">Initial point for the optimisation.</param>
-        /// <param name="con">Optional nonlinear constraints delegate. May be <c>null</c>.</param>
-        /// <param name="opt">Solver options. If <c>null</c> a default configuration is used.</param>
-        /// <param name="Hess">Optional Hessian approximation parameter. Currently ignored but kept for signature compatibility.</param>
         public static void runSqp(
             ref Vector<double> xout,
             ref SqpInfo info,
@@ -52,91 +34,69 @@ namespace Optimizer.Core.NonlinearProgramming
 
             if (X_orig == null)
             {
-                throw new OptimizationException("X_orig (initial guess) cannot be null.");
+                throw new OptimizationException("X_orig cannot be null.");
             }
 
-            var dimension = X_orig.Count;
-            xout ??= Vector<double>.Build.Dense(dimension);
+            xout ??= X_orig.Clone();
+            info ??= new SqpInfo();
+            act_ind ??= new List<int>();
 
-            if (xout.Count != dimension)
-            {
-                throw new OptimizationException("xout must match the dimension of the initial guess.");
-            }
+            var problem = new NonlinearProblem(
+                obj,
+                null,
+                Array.Empty<NonlinearConstraint>(),
+                X_orig,
+                lb,
+                ub,
+                Aequ,
+                bequ,
+                Aieq,
+                bieq);
 
-            var effectiveOptions = opt ?? new SqpOptions();
-            var solver = new SqpSolver(obj, con, Aequ, bequ, Aieq, bieq, lb, ub, effectiveOptions);
-            solver.Solve(X_orig, xout);
+            var solver = new SequentialQuadraticProgrammingSolver();
+            var solution = solver.Solve(problem, con, opt, info, out var multipliers, out var activeSet);
 
-            // Evaluate one last time to populate diagnostics and auxiliary data structures.
-            solver.EvaluateCompositeObjective(xout, out var rawObjective, out var violation);
-
-            info = info ?? new SqpInfo();
-            info.ObjectiveValue = rawObjective;
-            info.ConstraintViolation = violation;
-            info.IterationCount = solver.IterationCount;
-            info.FunctionEvaluations = solver.EvaluationCount;
-            info.GradientNorm = solver.LastGradientNorm;
-            info.Status = violation <= effectiveOptions.Tolerance
-                ? "Converged"
-                : "Finished without satisfying tolerance";
-
-            // Populate lambda and active set outputs for compatibility. We treat all multipliers as zero
-            // and simply report the indices of nearly active linear inequalities.
-            var equalityCount = (Aequ?.RowCount ?? 0);
-            var inequalityCount = (Aieq?.RowCount ?? 0);
-            var nonlinearCount = con?.Invoke(xout)?.Values?.Count ?? 0;
-            var totalConstraints = equalityCount + inequalityCount + nonlinearCount;
-
-            lambda = Vector<double>.Build.Dense(totalConstraints);
-            act_ind = act_ind ?? new List<int>();
+            xout = solution.Clone();
+            lambda = multipliers;
             act_ind.Clear();
+            act_ind.AddRange(activeSet);
 
-            for (var i = 0; i < equalityCount; i++)
-            {
-                act_ind.Add(i);
-            }
-
-            var tolerance = effectiveOptions.Tolerance;
-
-            if (Aieq != null && bieq != null)
-            {
-                var residual = Aieq * xout - bieq;
-                for (var i = 0; i < residual.Count; i++)
-                {
-                    if (Math.Abs(residual[i]) <= tolerance)
-                    {
-                        act_ind.Add(equalityCount + i);
-                    }
-                }
-            }
-
-            if (con != null)
-            {
-                var evaluation = con(xout) ?? ConstraintEvaluation.Empty;
-                if (evaluation.Values != null)
-                {
-                    for (var i = 0; i < evaluation.Values.Count; i++)
-                    {
-                        var value = evaluation.Values[i];
-                        var index = equalityCount + inequalityCount + i;
-
-                        if (i < evaluation.EqualityCount)
-                        {
-                            if (!act_ind.Contains(index))
-                            {
-                                act_ind.Add(index);
-                            }
-                        }
-                        else if (Math.Abs(value) <= tolerance)
-                        {
-                            act_ind.Add(index);
-                        }
-                    }
-                }
-            }
-
-            // Hess parameter intentionally unused - retained for compatibility with the original signature.
+            // Hess parameter is retained for signature compatibility.
             _ = Hess;
+        }
+
+        public static Solution Solve(
+            Func<Vector<double>, double> objective,
+            Func<Vector<double>, Vector<double>> gradient,
+            IEnumerable<NonlinearConstraint> constraints,
+            Vector<double> initialGuess,
+            SqpOptions options,
+            out SqpInfo info)
+        {
+            if (objective == null)
+            {
+                throw new OptimizationException("Objective delegate must not be null.");
+            }
+
+            if (initialGuess == null)
+            {
+                throw new OptimizationException("An initial guess is required.");
+            }
+
+            var constraintList = constraints != null
+                ? new List<NonlinearConstraint>(constraints)
+                : new List<NonlinearConstraint>();
+
+            var problem = new NonlinearProblem(
+                objective,
+                gradient,
+                constraintList,
+                initialGuess);
+
+            var solver = new SequentialQuadraticProgrammingSolver();
+            info = new SqpInfo();
+            var solutionVector = solver.Solve(problem, null, options, info, out _, out _);
+            return new Solution(solutionVector, info.ObjectiveValue, SolverResultStatus.Optimal, info.SqpCount, TimeSpan.Zero);
         }
     }
 }

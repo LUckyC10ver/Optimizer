@@ -1,90 +1,40 @@
-using System;
 using System.Collections.Generic;
-using System.Linq;
 using MathNet.Numerics.LinearAlgebra;
 using Optimizer.Core.Common;
 using Optimizer.Core.LinearProgramming;
 
 namespace Optimizer.Core.BranchAndBound
 {
-    public class MixedIntegerProblem
+    /// <summary>
+    /// Represents a mixed integer linear programming instance that reuses the linear relaxation infrastructure.
+    /// </summary>
+    public sealed class MixedIntegerProblem
     {
-        public LinearProblem BaseProblem { get; }
-
-        public ISet<int> IntegerIndices { get; }
-
-        public int VariableCount => BaseProblem?.C?.Count ?? 0;
-
-        public MixedIntegerProblem(LinearProblem baseProblem, IEnumerable<int> integerIndices)
+        public MixedIntegerProblem(LinearProblem relaxation, IEnumerable<int> integerIndices)
         {
-            BaseProblem = baseProblem ?? throw new OptimizationException("Base linear problem cannot be null.");
-
-            if (BaseProblem.C == null)
-            {
-                throw new OptimizationException("Objective vector c cannot be null for a mixed-integer problem.");
-            }
-
-            IntegerIndices = integerIndices != null
-                ? new HashSet<int>(integerIndices.Where(i => i >= 0))
-                : new HashSet<int>();
-
-            foreach (var index in IntegerIndices)
-            {
-                if (index >= BaseProblem.C.Count)
-                {
-                    throw new OptimizationException($"Integer index {index} is outside the variable range.");
-                }
-            }
+            Relaxation = relaxation ?? throw new OptimizationException("A linear relaxation must be supplied.");
+            IntegerIndices = new HashSet<int>(integerIndices ?? new int[0]);
         }
 
-        public Vector<double> GetInitialLowerBounds()
+        public LinearProblem Relaxation { get; }
+
+        public HashSet<int> IntegerIndices { get; }
+
+        public MixedIntegerProblem WithAdditionalConstraint(Vector<double> coefficients, double value)
         {
-            var dimension = VariableCount;
-            if (dimension == 0)
-            {
-                return Vector<double>.Build.Dense(0);
-            }
+            var currentA = Relaxation.A;
+            var currentB = Relaxation.B;
 
-            var lower = Vector<double>.Build.Dense(dimension, double.NegativeInfinity);
-            if (BaseProblem.LowerBounds != null)
-            {
-                if (BaseProblem.LowerBounds.Count != dimension)
-                {
-                    throw new OptimizationException("Lower bound vector length must match the number of variables.");
-                }
+            var newA = Matrix<double>.Build.Dense(currentA.RowCount + 1, currentA.ColumnCount);
+            newA.SetSubMatrix(0, currentA.RowCount, 0, currentA.ColumnCount, currentA);
+            newA.SetRow(currentA.RowCount, coefficients);
 
-                for (var i = 0; i < dimension; i++)
-                {
-                    lower[i] = BaseProblem.LowerBounds[i];
-                }
-            }
+            var newB = Vector<double>.Build.Dense(currentB.Count + 1);
+            newB.SetSubVector(0, currentB.Count, currentB);
+            newB[currentB.Count] = value;
 
-            return lower;
-        }
-
-        public Vector<double> GetInitialUpperBounds()
-        {
-            var dimension = VariableCount;
-            if (dimension == 0)
-            {
-                return Vector<double>.Build.Dense(0);
-            }
-
-            var upper = Vector<double>.Build.Dense(dimension, double.PositiveInfinity);
-            if (BaseProblem.UpperBounds != null)
-            {
-                if (BaseProblem.UpperBounds.Count != dimension)
-                {
-                    throw new OptimizationException("Upper bound vector length must match the number of variables.");
-                }
-
-                for (var i = 0; i < dimension; i++)
-                {
-                    upper[i] = BaseProblem.UpperBounds[i];
-                }
-            }
-
-            return upper;
+            var newProblem = new LinearProblem(newA, newB, Relaxation.C, Relaxation.IsMinimisation);
+            return new MixedIntegerProblem(newProblem, IntegerIndices);
         }
     }
 }

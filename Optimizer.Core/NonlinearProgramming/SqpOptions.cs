@@ -1,41 +1,48 @@
-using System;
+using System.IO;
 
 namespace Optimizer.Core.NonlinearProgramming
 {
     /// <summary>
-    /// Configurable parameters for the lightweight SQP-style search used by <see cref="RunSqp"/>.
+    /// Container for the configuration values exposed by the legacy SQP interface.
     /// </summary>
     public sealed class SqpOptions
     {
-        /// <summary>
-        /// Maximum number of outer iterations performed by the solver.
-        /// </summary>
-        public int MaxIterations { get; set; } = 200;
+        public SqpOptions()
+        {
+        }
 
-        /// <summary>
-        /// Target tolerance for both gradient norm and constraint violation.
-        /// </summary>
-        public double Tolerance { get; set; } = 1e-6;
+        public int Display { get; set; } = 0;
 
-        /// <summary>
-        /// Step length used for the gradient-descent style update.
-        /// </summary>
-        public double StepSize { get; set; } = 0.1;
+        public double TolArg { get; set; } = 1e-2;
 
-        /// <summary>
-        /// Penalty factor applied to constraint violations.
-        /// </summary>
+        public double TolObj { get; set; } = 1e-4;
+
+        public double TolCon { get; set; } = 1e-6;
+
+        public int LineSearch { get; set; } = 0;
+
+        public bool CheckGrad { get; set; } = false;
+
+        public int MaxFunEvals { get; set; } = 0;
+
+        public double DiffMinChange { get; set; } = 1e-9;
+
+        public double DiffMaxChange { get; set; } = 1e-6;
+
+        public double MaxDouble { get; set; } = 1.7e38;
+
+        public double Eps { get; set; } = 1e-11;
+
+        public TextWriter SqpLog { get; set; }
+            = null;
+
+        public TextWriter QpLog { get; set; }
+            = null;
+
+        public int MaxNumItersQP { get; set; } = 1_000;
+
         public double PenaltyWeight { get; set; } = 50.0;
 
-        /// <summary>
-        /// Finite difference step used to approximate gradients of the penalised objective.
-        /// </summary>
-        public double FiniteDifferenceStep { get; set; } = 1e-5;
-
-        /// <summary>
-        /// Optional callback that receives progress updates. The tuple provides
-        /// the current iterate, penalised objective, raw objective, and violation magnitude.
-        /// </summary>
-        public Action<MathNet.Numerics.LinearAlgebra.Vector<double>, double, double, double> ProgressCallback { get; set; }
+        public double StepSize { get; set; } = 0.1;
     }
 }

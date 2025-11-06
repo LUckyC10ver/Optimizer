@@ -1,38 +1,30 @@
 namespace Optimizer.Core.NonlinearProgramming
 {
     /// <summary>
-    /// Status information returned by <see cref="RunSqp.runSqp"/>.
+    /// Diagnostic information reported by the SQP routine.
     /// </summary>
     public sealed class SqpInfo
     {
-        /// <summary>
-        /// Final objective value (without penalties) reported by the solver.
-        /// </summary>
         public double ObjectiveValue { get; set; }
 
-        /// <summary>
-        /// Number of outer iterations performed.
-        /// </summary>
-        public int IterationCount { get; set; }
+        public int SqpCount { get; set; }
 
-        /// <summary>
-        /// Total number of penalised objective evaluations.
-        /// </summary>
-        public int FunctionEvaluations { get; set; }
+        public int FunCount { get; set; }
 
-        /// <summary>
-        /// Estimated norm of the penalised gradient at the final iterate.
-        /// </summary>
-        public double GradientNorm { get; set; }
+        public int GradCount { get; set; }
 
-        /// <summary>
-        /// Maximum absolute constraint violation measured at the final iterate.
-        /// </summary>
+        public double StepLength { get; set; }
+
+        public string How { get; set; } = string.Empty;
+
+        public string HowQP { get; set; } = string.Empty;
+
         public double ConstraintViolation { get; set; }
 
-        /// <summary>
-        /// Textual description of the stop reason.
-        /// </summary>
+        public int IterationCount { get; set; }
+
+        public double GradientNorm { get; set; }
+
         public string Status { get; set; } = string.Empty;
     }
 }

@@ -3,29 +3,41 @@ using MathNet.Numerics.LinearAlgebra;
 
 namespace Optimizer.Core.Common
 {
+    /// <summary>
+    /// Indicates the high-level outcome of a solver run.
+    /// </summary>
     public enum SolverResultStatus
     {
-        Unknown,
         Optimal,
         Infeasible,
         Unbounded,
         IterationLimit,
-        Error,
-        NotImplemented
+        TimeLimit,
+        Error
     }
 
-    public class Solution
+    /// <summary>
+    /// Encapsulates the result of an optimisation routine.
+    /// </summary>
+    public sealed class Solution
     {
-        public Vector<double> OptimalPoint { get; set; }
+        public Solution(Vector<double> optimalX, double optimalValue, SolverResultStatus status, int iterations, TimeSpan solveTime)
+        {
+            OptimalX = optimalX;
+            OptimalValue = optimalValue;
+            Status = status;
+            Iterations = iterations;
+            SolveTime = solveTime;
+        }
 
-        public double OptimalValue { get; set; }
+        public Vector<double> OptimalX { get; }
 
-        public SolverResultStatus Status { get; set; } = SolverResultStatus.Unknown;
+        public double OptimalValue { get; }
 
-        public int Iterations { get; set; }
+        public SolverResultStatus Status { get; }
 
-        public TimeSpan SolveTime { get; set; }
+        public int Iterations { get; }
 
-        public string Message { get; set; }
+        public TimeSpan SolveTime { get; }
     }
 }

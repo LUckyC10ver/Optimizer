@@ -85,7 +85,7 @@ namespace Optimizer.Core
             Vector<double> initialGuess,
             SqpOptions options = null)
         {
-            return RunSqpFacade.Solve(objective, gradient, constraints, initialGuess, options);
+            return RunSqpFacade.Solve(objective, gradient, constraints, initialGuess, options, out _);
         }
 
         public static Solution BranchAndBound(double[,] a, double[] b, double[] c, IEnumerable<int> integerIndices, SolverOptions options = null)

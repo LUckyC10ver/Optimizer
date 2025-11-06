@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using MathNet.Numerics.LinearAlgebra;
 
 namespace Optimizer.Core.NonlinearProgramming
 {
@@ -90,6 +91,13 @@ namespace Optimizer.Core.NonlinearProgramming
         /// (iteration index, raw objective, maximum constraint violation, full SQP info snapshot).
         /// </summary>
         public Action<int, double, double, SqpInfo> ProgressCallback { get; set; }
+            = null;
+
+        /// <summary>
+        /// Retained for compatibility with earlier tooling that expected the signature
+        /// (iterate, penalised objective, raw objective, violation).
+        /// </summary>
+        public Action<Vector<double>, double, double, double> LegacyProgressCallback { get; set; }
             = null;
 
         /// <summary>

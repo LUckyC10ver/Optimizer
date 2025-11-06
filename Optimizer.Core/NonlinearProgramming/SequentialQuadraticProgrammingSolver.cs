@@ -46,8 +46,6 @@ namespace Optimizer.Core.NonlinearProgramming
             double bestObjective = double.PositiveInfinity;
             double bestViolation = double.PositiveInfinity;
             double bestRawObjective = double.PositiveInfinity;
-            double lastRawObjective = double.PositiveInfinity;
-            double lastViolation = double.PositiveInfinity;
 
             var equalityCount = problem.EqualityMatrix?.RowCount ?? 0;
             var inequalityCount = problem.InequalityMatrix?.RowCount ?? 0;
@@ -60,8 +58,6 @@ namespace Optimizer.Core.NonlinearProgramming
                 info.FunCount++;
 
                 var composite = EvaluateComposite(problem, constraintEvaluator, x, penalty, out var rawObjective, out var violation);
-                lastRawObjective = rawObjective;
-                lastViolation = violation;
 
                 if (composite < bestObjective)
                 {
@@ -82,7 +78,7 @@ namespace Optimizer.Core.NonlinearProgramming
 
                 if (gradNorm < tolerance && violation < options.TolCon)
                 {
-                    ReportProgress(options, info.SqpCount, rawObjective, violation, info);
+                    ReportProgress(options, x, info.SqpCount, composite, rawObjective, violation, info);
                     break;
                 }
 
@@ -90,7 +86,7 @@ namespace Optimizer.Core.NonlinearProgramming
                 ProjectBounds(problem, x);
                 EnforceLinearEqualities(problem, x);
 
-                ReportProgress(options, info.SqpCount, rawObjective, violation, info);
+                ReportProgress(options, x, info.SqpCount, composite, rawObjective, violation, info);
             }
 
             info.ObjectiveValue = bestRawObjective;
@@ -101,14 +97,16 @@ namespace Optimizer.Core.NonlinearProgramming
             ExtractActiveSet(problem, constraintEvaluator, best, options, activeSet);
             multipliers = Vector<double>.Build.Dense(activeSet.Count);
 
-            ReportProgress(options, info.SqpCount, lastRawObjective, lastViolation, info);
+            ReportProgress(options, best, info.SqpCount, bestObjective, bestRawObjective, bestViolation, info);
 
             return best;
         }
 
         private static void ReportProgress(
             SqpOptions options,
+            Vector<double> iterate,
             int iteration,
+            double composite,
             double rawObjective,
             double violation,
             SqpInfo info)
@@ -119,6 +117,10 @@ namespace Optimizer.Core.NonlinearProgramming
             }
 
             options.ProgressCallback?.Invoke(iteration, rawObjective, violation, info);
+            if (options.LegacyProgressCallback != null && iterate != null)
+            {
+                options.LegacyProgressCallback.Invoke(iterate.Clone(), composite, rawObjective, violation);
+            }
             options.ProgressReporter?.Invoke(info);
         }
 

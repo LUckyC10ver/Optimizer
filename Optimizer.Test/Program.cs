@@ -173,87 +173,61 @@ namespace Optimizer.Test
 
         private static void RunQuadraticProgrammingSample()
         {
-            var q = Matrix<double>.Build.DenseOfArray(new[,]
+            var cases = new List<QuadraticTestCase>
             {
-                {2.0, 0.0},
-                {0.0, 2.0}
-            });
-
-            var c = Vector<double>.Build.DenseOfArray(new[]
-            {
-                -2.0,
-                -5.0
-            });
-
-            var equalityMatrix = Matrix<double>.Build.DenseOfArray(new[,]
-            {
-                {1.0, 1.0}
-            });
-
-            var equalityVector = Vector<double>.Build.DenseOfArray(new[]
-            {
-                1.0
-            });
-
-            var lowerBounds = Vector<double>.Build.DenseOfArray(new[]
-            {
-                0.0,
-                0.0
-            });
-
-            var initialGuess = Vector<double>.Build.DenseOfArray(new[]
-            {
-                0.5,
-                0.5
-            });
-
-            var expected = Vector<double>.Build.DenseOfArray(new[]
-            {
-                0.0,
-                1.0
-            });
-
-            var problem = new QuadraticProblem(
-                q,
-                c,
-                equalityMatrix: equalityMatrix,
-                equalityVector: equalityVector,
-                lowerBounds: lowerBounds,
-                initialGuess: initialGuess);
-
-            Console.WriteLine("calling quadprog with problem data...");
-            Console.WriteLine($"  Hessian Q:       {Format(q)}");
-            Console.WriteLine($"  Gradient c:      {Format(c)}");
-            Console.WriteLine($"  Aeq:             {Format(equalityMatrix)}");
-            Console.WriteLine($"  beq:             {Format(equalityVector)}");
-            Console.WriteLine($"  lower bounds lb: {Format(lowerBounds)}");
-            Console.WriteLine($"  initial guess x0:{Format(initialGuess)}");
+                CreateBoundedEqualityCase(),
+                CreateUnconstrainedQuadraticCase(),
+                CreateInequalityActiveCase()
+            };
 
             var solver = new QuadraticProgrammingSolver();
-            var solution = solver.Solve(problem);
 
-            var iterate = solution.OptimalX ?? Vector<double>.Build.Dense(q.ColumnCount);
-            var difference = iterate - expected;
-            var equalityResidual = equalityMatrix * iterate - equalityVector;
-            var objectiveValue = solution.OptimalValue;
-
-            Console.WriteLine("quadprog finished.");
-            Console.WriteLine($"  status:          {solution.Status}");
-            Console.WriteLine($"  iterations:      {solution.Iterations}");
-            Console.WriteLine($"  solve time [ms]: {solution.SolveTime.TotalMilliseconds.ToString("G17", CultureInfo.InvariantCulture)}");
-            Console.WriteLine($"  solution x:      {Format(iterate)}");
-            Console.WriteLine($"  objective value: {objectiveValue.ToString("G17", CultureInfo.InvariantCulture)}");
-            Console.WriteLine($"  equality residuals: {Format(equalityResidual)} (L2={equalityResidual.L2Norm().ToString("G17", CultureInfo.InvariantCulture)})");
-            Console.WriteLine($"  difference (x-xopt): {Format(difference)} (L2={difference.L2Norm().ToString("G17", CultureInfo.InvariantCulture)})");
-
-            if (solution.Status != SolverResultStatus.Optimal)
+            foreach (var testCase in cases)
             {
-                Console.WriteLine("quadprog did not converge to an optimal solution. Inspect diagnostics above for more detail.");
-                return;
-            }
+                Console.WriteLine($"Test case: {testCase.Name}");
+                var problem = testCase.BuildProblem();
 
-            Console.WriteLine();
-            Console.WriteLine($"error of quadprog= {difference.L2Norm().ToString("G17", CultureInfo.InvariantCulture)}");
+                LogProblemData(problem);
+
+                var options = new SolverOptions
+                {
+                    Tolerance = 1e-8,
+                    MaxIterations = 5_000,
+                    Verbose = true,
+                    DiagnosticsWriter = Console.Out
+                };
+
+                Console.WriteLine("calling quadprog with problem data (iteration log below)...");
+                var solution = solver.Solve(problem, options);
+                Console.WriteLine("quadprog finished.");
+
+                var iterate = solution.OptimalX ?? Vector<double>.Build.Dense(problem.Q.ColumnCount);
+                var equalityResidual = ComputeEqualityResidual(problem, iterate);
+                var inequalityResidual = ComputeInequalityResidual(problem, iterate);
+                var objectiveValue = EvaluateObjective(problem, iterate);
+
+                Console.WriteLine($"  status:             {solution.Status}");
+                Console.WriteLine($"  iterations:         {solution.Iterations}");
+                Console.WriteLine($"  solve time [ms]:    {solution.SolveTime.TotalMilliseconds.ToString("G17", CultureInfo.InvariantCulture)}");
+                Console.WriteLine($"  solution x:         {Format(iterate)}");
+                Console.WriteLine($"  objective value:    {objectiveValue.ToString("G17", CultureInfo.InvariantCulture)}");
+                Console.WriteLine($"  equality residuals: {Format(equalityResidual)} (L2={equalityResidual.L2Norm().ToString("G17", CultureInfo.InvariantCulture)})");
+                Console.WriteLine($"  inequality residuals: {Format(inequalityResidual)} (pos-max={inequalityResidual.Enumerate().Where(v => v > 0).DefaultIfEmpty(0).Max().ToString("G17", CultureInfo.InvariantCulture)})");
+
+                if (testCase.ExpectedSolution != null)
+                {
+                    var difference = iterate - testCase.ExpectedSolution;
+                    Console.WriteLine($"  reference x*:       {Format(testCase.ExpectedSolution)}");
+                    Console.WriteLine($"  difference (x-x*):  {Format(difference)} (L2={difference.L2Norm().ToString("G17", CultureInfo.InvariantCulture)})");
+                }
+
+                if (solution.Status != SolverResultStatus.Optimal)
+                {
+                    Console.WriteLine("quadprog did not converge to an optimal solution. Inspect diagnostics above for more detail.");
+                }
+
+                Console.WriteLine();
+            }
         }
 
         private static string Format(IEnumerable<int> indices)
@@ -271,6 +245,32 @@ namespace Optimizer.Test
             var rows = matrix.EnumerateRows()
                 .Select(row => $"[{string.Join(", ", row.Select(v => v.ToString("G17", CultureInfo.InvariantCulture)))}]");
             return $"[{string.Join(", ", rows)}]";
+        }
+
+        private static double EvaluateObjective(QuadraticProblem problem, Vector<double> iterate)
+        {
+            var value = 0.5 * iterate.DotProduct(problem.Q * iterate) + problem.C.DotProduct(iterate);
+            return problem.IsMinimisation ? value : -value;
+        }
+
+        private static Vector<double> ComputeEqualityResidual(QuadraticProblem problem, Vector<double> iterate)
+        {
+            if (problem.EqualityMatrix == null || problem.EqualityVector == null)
+            {
+                return Vector<double>.Build.Dense(0);
+            }
+
+            return problem.EqualityMatrix * iterate - problem.EqualityVector;
+        }
+
+        private static Vector<double> ComputeInequalityResidual(QuadraticProblem problem, Vector<double> iterate)
+        {
+            if (problem.InequalityMatrix == null || problem.InequalityVector == null)
+            {
+                return Vector<double>.Build.Dense(0);
+            }
+
+            return problem.InequalityMatrix * iterate - problem.InequalityVector;
         }
 
         private static List<int> BuildActiveSet(Vector<double> residualEqu, Vector<double> residualIeq, int equalityCount, double tolerance)
@@ -329,6 +329,144 @@ namespace Optimizer.Test
             }
 
             return (augmented, rhs);
+        }
+
+        private static void LogProblemData(QuadraticProblem problem)
+        {
+            Console.WriteLine("problem snapshot:");
+            Console.WriteLine($"  Hessian Q:        {Format(problem.Q)}");
+            Console.WriteLine($"  Gradient c:       {Format(problem.C)}");
+
+            if (problem.EqualityMatrix != null && problem.EqualityVector != null)
+            {
+                Console.WriteLine($"  Equality Aeq:     {Format(problem.EqualityMatrix)}");
+                Console.WriteLine($"  Equality beq:     {Format(problem.EqualityVector)}");
+            }
+            else
+            {
+                Console.WriteLine("  Equality Aeq:     []");
+                Console.WriteLine("  Equality beq:     []");
+            }
+
+            if (problem.InequalityMatrix != null && problem.InequalityVector != null)
+            {
+                Console.WriteLine($"  Inequality Aieq:  {Format(problem.InequalityMatrix)}");
+                Console.WriteLine($"  Inequality bieq:  {Format(problem.InequalityVector)}");
+            }
+            else
+            {
+                Console.WriteLine("  Inequality Aieq:  []");
+                Console.WriteLine("  Inequality bieq:  []");
+            }
+
+            if (problem.LowerBounds != null)
+            {
+                Console.WriteLine($"  Lower bounds lb:  {Format(problem.LowerBounds)}");
+            }
+            else
+            {
+                Console.WriteLine("  Lower bounds lb:  []");
+            }
+
+            if (problem.UpperBounds != null)
+            {
+                Console.WriteLine($"  Upper bounds ub:  {Format(problem.UpperBounds)}");
+            }
+            else
+            {
+                Console.WriteLine("  Upper bounds ub:  []");
+            }
+
+            if (problem.InitialGuess != null)
+            {
+                Console.WriteLine($"  Initial guess x0: {Format(problem.InitialGuess)}");
+            }
+            else
+            {
+                Console.WriteLine("  Initial guess x0: []");
+            }
+        }
+
+        private static QuadraticTestCase CreateBoundedEqualityCase()
+        {
+            return new QuadraticTestCase
+            {
+                Name = "Bounded equality constrained (2 variables)",
+                BuildProblem = () =>
+                {
+                    var q = Matrix<double>.Build.DenseOfArray(new[,]
+                    {
+                        {2.0, 0.0},
+                        {0.0, 2.0}
+                    });
+
+                    var c = Vector<double>.Build.DenseOfArray(new[] {-2.0, -5.0});
+
+                    var equalityMatrix = Matrix<double>.Build.DenseOfArray(new[,]
+                    {
+                        {1.0, 1.0}
+                    });
+
+                    var equalityVector = Vector<double>.Build.DenseOfArray(new[] {1.0});
+
+                    var lowerBounds = Vector<double>.Build.DenseOfArray(new[] {0.0, 0.0});
+                    var initialGuess = Vector<double>.Build.DenseOfArray(new[] {0.5, 0.5});
+
+                    return new QuadraticProblem(q, c, equalityMatrix: equalityMatrix, equalityVector: equalityVector, lowerBounds: lowerBounds, initialGuess: initialGuess);
+                },
+                ExpectedSolution = Vector<double>.Build.DenseOfArray(new[] {0.0, 1.0})
+            };
+        }
+
+        private static QuadraticTestCase CreateUnconstrainedQuadraticCase()
+        {
+            return new QuadraticTestCase
+            {
+                Name = "Unconstrained paraboloid (2 variables)",
+                BuildProblem = () =>
+                {
+                    var q = Matrix<double>.Build.DenseIdentity(2) * 2.0;
+                    var c = Vector<double>.Build.DenseOfArray(new[] {-2.0, -4.0});
+                    var initialGuess = Vector<double>.Build.DenseOfArray(new[] {3.0, -1.0});
+
+                    return new QuadraticProblem(q, c, initialGuess: initialGuess);
+                },
+                ExpectedSolution = Vector<double>.Build.DenseOfArray(new[] {1.0, 2.0})
+            };
+        }
+
+        private static QuadraticTestCase CreateInequalityActiveCase()
+        {
+            return new QuadraticTestCase
+            {
+                Name = "Inequality active at optimum (2 variables)",
+                BuildProblem = () =>
+                {
+                    var q = Matrix<double>.Build.DenseIdentity(2) * 2.0;
+                    var c = Vector<double>.Build.DenseOfArray(new[] {-6.0, -2.0 });
+
+                    // Constraint: x + y >= 5  ->  -x - y <= -5
+                    var inequalityMatrix = Matrix<double>.Build.DenseOfArray(new[,]
+                    {
+                        {-1.0, -1.0}
+                    });
+
+                    var inequalityVector = Vector<double>.Build.DenseOfArray(new[] {-5.0});
+                    var initialGuess = Vector<double>.Build.DenseOfArray(new[] {2.5, 2.5});
+
+                    return new QuadraticProblem(q, c, inequalityMatrix, inequalityVector, initialGuess: initialGuess);
+                },
+                ExpectedSolution = Vector<double>.Build.DenseOfArray(new[] {3.5, 1.5})
+            };
+        }
+
+        private sealed class QuadraticTestCase
+        {
+            public string Name { get; set; }
+
+            public Func<QuadraticProblem> BuildProblem { get; set; }
+
+            public Vector<double> ExpectedSolution { get; set; }
         }
     }
 }

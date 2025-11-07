@@ -1,5 +1,8 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using MathNet.Numerics.LinearAlgebra;
 using Optimizer.Core.Common;
 
@@ -20,10 +23,18 @@ namespace Optimizer.Core.QuadraticProgramming
 
             problem.Validate();
 
-            var tolerance = options?.Tolerance ?? 1e-6;
-            var maxIterations = options?.MaxIterations ?? 5_000;
+            if (options == null)
+            {
+                options = new SolverOptions();
+            }
+            var tolerance = options.Tolerance <= 0 ? 1e-8 : options.Tolerance;
+            var maxIterations = Math.Max(1, options.MaxIterations);
             var penaltyWeight = 100.0;
             var stepSize = 1.0 / Math.Max(problem.Q.RowCount, 1);
+
+            var writer = ResolveWriter(options);
+            writer?.WriteLine("[quadprog] Starting optimisation");
+            writer?.WriteLine($"[quadprog] Settings: tolerance={FormatDouble(tolerance)}, maxIterations={maxIterations}, stepSize={FormatDouble(stepSize)}");
 
             var dimension = problem.Q.ColumnCount;
             var x = problem.InitialGuess?.Clone() ?? Vector<double>.Build.Dense(dimension);
@@ -44,32 +55,64 @@ namespace Optimizer.Core.QuadraticProgramming
                 }
             }
 
+            writer?.WriteLine($"[quadprog] Initial iterate: {FormatVector(x)}");
+
             var gradient = Vector<double>.Build.Dense(dimension);
             var watch = Stopwatch.StartNew();
             var iterations = 0;
+            var status = SolverResultStatus.IterationLimit;
 
             for (; iterations < maxIterations; iterations++)
             {
-                ComputeGradient(problem, x, penaltyWeight, gradient, out var violation);
-
-                if (violation < tolerance && gradient.L2Norm() < tolerance)
+                if (HasTimeLimitExpired(options, watch.Elapsed))
                 {
+                    status = SolverResultStatus.TimeLimit;
+                    writer?.WriteLine("[quadprog] Time limit reached, stopping optimisation.");
                     break;
                 }
 
-                x -= gradient * stepSize;
+                ComputeGradient(problem, x, penaltyWeight, gradient, out var violation);
+                var objective = EvaluateObjective(problem, x);
+                if (!problem.IsMinimisation)
+                {
+                    objective = -objective;
+                }
+
+                var gradientNorm = gradient.L2Norm();
+                EvaluateResiduals(problem, x, out var equalityNorm, out var inequalityViolation);
+
+                var iterationIndex = iterations + 1;
+                writer?.WriteLine(
+                    $"[quadprog] iter {iterationIndex:D4}: obj={FormatDouble(objective)}, grad={FormatDouble(gradientNorm)}, eqNorm={FormatDouble(equalityNorm)}, ineqPos={FormatDouble(inequalityViolation)}, maxViol={FormatDouble(violation)}");
+
+                if (violation < tolerance && gradientNorm < tolerance)
+                {
+                    status = SolverResultStatus.Optimal;
+                    writer?.WriteLine("[quadprog] Converged based on tolerance criteria.");
+                    iterations = iterationIndex;
+                    break;
+                }
+
+                var step = gradient * stepSize;
+                var stepNorm = step.L2Norm();
+                x -= step;
                 Project(problem, x);
+
+                writer?.WriteLine(
+                    $"[quadprog]          step={FormatDouble(stepNorm)} -> new x={FormatVector(x)}");
             }
 
             watch.Stop();
 
-            var objective = EvaluateObjective(problem, x);
+            var finalObjective = EvaluateObjective(problem, x);
             if (!problem.IsMinimisation)
             {
-                objective = -objective;
+                finalObjective = -finalObjective;
             }
 
-            return new Solution(x.Clone(), objective, iterations < maxIterations ? SolverResultStatus.Optimal : SolverResultStatus.IterationLimit, iterations, watch.Elapsed);
+            writer?.WriteLine($"[quadprog] Finished with status={status} after {iterations} iterations, objective={FormatDouble(finalObjective)}");
+
+            return new Solution(x.Clone(), finalObjective, status, iterations, watch.Elapsed);
         }
 
         private static void ComputeGradient(
@@ -103,6 +146,28 @@ namespace Optimizer.Core.QuadraticProgramming
             }
         }
 
+        private static void EvaluateResiduals(
+            QuadraticProblem problem,
+            Vector<double> point,
+            out double equalityNorm,
+            out double inequalityViolation)
+        {
+            equalityNorm = 0.0;
+            inequalityViolation = 0.0;
+
+            if (problem.EqualityMatrix != null && problem.EqualityVector != null)
+            {
+                var equalityResidual = problem.EqualityMatrix * point - problem.EqualityVector;
+                equalityNorm = equalityResidual.L2Norm();
+            }
+
+            if (problem.InequalityMatrix != null && problem.InequalityVector != null)
+            {
+                var inequalityResidual = problem.InequalityMatrix * point - problem.InequalityVector;
+                inequalityViolation = inequalityResidual.Enumerate().Where(v => v > 0).DefaultIfEmpty(0.0).Max();
+            }
+        }
+
         private static double EvaluateObjective(QuadraticProblem problem, Vector<double> x)
         {
             var quadratic = 0.5 * x.DotProduct(problem.Q * x);
@@ -127,6 +192,41 @@ namespace Optimizer.Core.QuadraticProgramming
                     vector[i] = Math.Min(vector[i], problem.UpperBounds[i]);
                 }
             }
+        }
+
+        private static TextWriter ResolveWriter(SolverOptions options)
+        {
+            if (options == null)
+            {
+                return null;
+            }
+
+            if (options.DiagnosticsWriter != null)
+            {
+                return options.DiagnosticsWriter;
+            }
+
+            return options.Verbose ? Console.Out : null;
+        }
+
+        private static bool HasTimeLimitExpired(SolverOptions options, TimeSpan elapsed)
+        {
+            return options?.TimeLimit != null && elapsed >= options.TimeLimit.Value;
+        }
+
+        private static string FormatVector(Vector<double> vector)
+        {
+            if (vector == null)
+            {
+                return "[]";
+            }
+
+            return "[" + string.Join(", ", vector.Enumerate().Select(v => v.ToString("G6", CultureInfo.InvariantCulture))) + "]";
+        }
+
+        private static string FormatDouble(double value)
+        {
+            return value.ToString("G12", CultureInfo.InvariantCulture);
         }
     }
 }

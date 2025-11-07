@@ -222,26 +222,38 @@ namespace Optimizer.Test
                 initialGuess: initialGuess);
 
             Console.WriteLine("calling quadprog with problem data...");
+            Console.WriteLine($"  Hessian Q:       {Format(q)}");
+            Console.WriteLine($"  Gradient c:      {Format(c)}");
+            Console.WriteLine($"  Aeq:             {Format(equalityMatrix)}");
+            Console.WriteLine($"  beq:             {Format(equalityVector)}");
+            Console.WriteLine($"  lower bounds lb: {Format(lowerBounds)}");
+            Console.WriteLine($"  initial guess x0:{Format(initialGuess)}");
 
             var solver = new QuadraticProgrammingSolver();
             var solution = solver.Solve(problem);
 
+            var iterate = solution.OptimalX ?? Vector<double>.Build.Dense(q.ColumnCount);
+            var difference = iterate - expected;
+            var equalityResidual = equalityMatrix * iterate - equalityVector;
+            var objectiveValue = solution.OptimalValue;
+
+            Console.WriteLine("quadprog finished.");
+            Console.WriteLine($"  status:          {solution.Status}");
+            Console.WriteLine($"  iterations:      {solution.Iterations}");
+            Console.WriteLine($"  solve time [ms]: {solution.SolveTime.TotalMilliseconds.ToString("G17", CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"  solution x:      {Format(iterate)}");
+            Console.WriteLine($"  objective value: {objectiveValue.ToString("G17", CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"  equality residuals: {Format(equalityResidual)} (L2={equalityResidual.L2Norm().ToString("G17", CultureInfo.InvariantCulture)})");
+            Console.WriteLine($"  difference (x-xopt): {Format(difference)} (L2={difference.L2Norm().ToString("G17", CultureInfo.InvariantCulture)})");
+
             if (solution.Status != SolverResultStatus.Optimal)
             {
-                Console.WriteLine($"quadprog did not converge to an optimal solution (status: {solution.Status}).");
+                Console.WriteLine("quadprog did not converge to an optimal solution. Inspect diagnostics above for more detail.");
                 return;
             }
 
-            var error = (solution.OptimalX - expected).L2Norm();
-            var equalityResidual = equalityMatrix * solution.OptimalX - equalityVector;
-
             Console.WriteLine();
-            Console.WriteLine($"error of quadprog= {error.ToString("G17", CultureInfo.InvariantCulture)}");
-            Console.WriteLine($"equality residual L2= {equalityResidual.L2Norm().ToString("G17", CultureInfo.InvariantCulture)}");
-            Console.WriteLine($"objective value= {solution.OptimalValue.ToString("G17", CultureInfo.InvariantCulture)}");
-            Console.WriteLine($"solution x (quadprog):   {Format(solution.OptimalX)}");
-            Console.WriteLine($"reference optimum:       {Format(expected)}");
-            Console.WriteLine($"difference (x-xopt):     {Format(solution.OptimalX - expected)}");
+            Console.WriteLine($"error of quadprog= {difference.L2Norm().ToString("G17", CultureInfo.InvariantCulture)}");
         }
 
         private static string Format(IEnumerable<int> indices)
@@ -252,6 +264,13 @@ namespace Optimizer.Test
         private static string Format(Vector<double> vector)
         {
             return $"[{string.Join(", ", vector.Enumerate().Select(v => v.ToString("G17", CultureInfo.InvariantCulture)))}]";
+        }
+
+        private static string Format(Matrix<double> matrix)
+        {
+            var rows = matrix.EnumerateRows()
+                .Select(row => $"[{string.Join(", ", row.Select(v => v.ToString("G17", CultureInfo.InvariantCulture)))}]");
+            return $"[{string.Join(", ", rows)}]";
         }
 
         private static List<int> BuildActiveSet(Vector<double> residualEqu, Vector<double> residualIeq, int equalityCount, double tolerance)

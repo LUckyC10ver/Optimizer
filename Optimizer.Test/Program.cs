@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using MathNet.Numerics.LinearAlgebra;
 using Optimizer.Core.Common;
 using Optimizer.Core.LinearProgramming;
@@ -138,6 +139,8 @@ namespace Optimizer.Test
 
             var combined = BuildAugmentedSystem(inequalityMatrix, inequalityVector, equalityMatrix, equalityVector);
 
+            Console.WriteLine("calling linprog with problem data...");
+
             var solver = new LinearProgrammingSolver();
             var solution = solver.Solve(combined.A.ToArray(), combined.B.ToArray(), objective);
 
@@ -153,6 +156,9 @@ namespace Optimizer.Test
 
             Console.WriteLine();
             Console.WriteLine($"error of simplex= {error.ToString("G17", CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"solution x (linprog):   {Format(x)}");
+            Console.WriteLine($"reference xopt:         {Format(Vector<double>.Build.DenseOfArray(optimalX))}");
+            Console.WriteLine($"difference (x-xopt):    {Format(diff)}");
 
             var residualEqu = Matrix<double>.Build.DenseOfArray(equalityMatrix) * x - Vector<double>.Build.DenseOfArray(equalityVector);
             var residualIeq = Matrix<double>.Build.DenseOfArray(inequalityMatrix) * x - Vector<double>.Build.DenseOfArray(inequalityVector);
@@ -160,6 +166,9 @@ namespace Optimizer.Test
             var activeIndices = BuildActiveSet(residualEqu, residualIeq, equalityCount, 1e-10);
 
             Console.WriteLine($"indices of active constraints (linprog):   {Format(activeIndices)}");
+            Console.WriteLine($"indices of active constraints (reference): {Format(activeIndices)}");
+            Console.WriteLine($"equality residuals:      {Format(residualEqu)}");
+            Console.WriteLine($"inequality residuals:    {Format(residualIeq)}");
         }
 
         private static void RunQuadraticProgrammingSample()
@@ -212,6 +221,8 @@ namespace Optimizer.Test
                 lowerBounds: lowerBounds,
                 initialGuess: initialGuess);
 
+            Console.WriteLine("calling quadprog with problem data...");
+
             var solver = new QuadraticProgrammingSolver();
             var solution = solver.Solve(problem);
 
@@ -228,11 +239,19 @@ namespace Optimizer.Test
             Console.WriteLine($"error of quadprog= {error.ToString("G17", CultureInfo.InvariantCulture)}");
             Console.WriteLine($"equality residual L2= {equalityResidual.L2Norm().ToString("G17", CultureInfo.InvariantCulture)}");
             Console.WriteLine($"objective value= {solution.OptimalValue.ToString("G17", CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"solution x (quadprog):   {Format(solution.OptimalX)}");
+            Console.WriteLine($"reference optimum:       {Format(expected)}");
+            Console.WriteLine($"difference (x-xopt):     {Format(solution.OptimalX - expected)}");
         }
 
         private static string Format(IEnumerable<int> indices)
         {
             return $"[{string.Join(", ", indices)}]";
+        }
+
+        private static string Format(Vector<double> vector)
+        {
+            return $"[{string.Join(", ", vector.Enumerate().Select(v => v.ToString("G17", CultureInfo.InvariantCulture)))}]";
         }
 
         private static List<int> BuildActiveSet(Vector<double> residualEqu, Vector<double> residualIeq, int equalityCount, double tolerance)

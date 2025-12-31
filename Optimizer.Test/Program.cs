@@ -5,6 +5,7 @@ using System.Linq;
 using MathNet.Numerics.LinearAlgebra;
 using Optimizer.Core.Common;
 using Optimizer.Core.LinearProgramming;
+using Optimizer.Core.NonlinearProgramming;
 using Optimizer.Core.QuadraticProgramming;
 
 namespace Optimizer.Test
@@ -16,6 +17,8 @@ namespace Optimizer.Test
             RunSection("Linear Programming Sample", RunLinearProgrammingSample);
             Console.WriteLine();
             RunSection("Quadratic Programming Sample", RunQuadraticProgrammingSample);
+            Console.WriteLine();
+            RunSection("Sequential Quadratic Programming Sample", RunSequentialQuadraticProgrammingSample);
         }
 
         private static void RunSection(string title, Action section)
@@ -467,6 +470,92 @@ namespace Optimizer.Test
             public Func<QuadraticProblem> BuildProblem { get; set; }
 
             public Vector<double> ExpectedSolution { get; set; }
+        }
+
+        private static void RunSequentialQuadraticProgrammingSample()
+        {
+            // Objective: minimise (x0-1)^2 + (x1-2)^2 subject to x0 + x1 = 3 and bounds x >= 0
+            var objective = new Func<Vector<double>, double>(x =>
+            {
+                var dx0 = x[0] - 1.0;
+                var dx1 = x[1] - 2.0;
+                return dx0 * dx0 + dx1 * dx1;
+            });
+
+            var constraintEvaluator = new Func<Vector<double>, ConstraintEvaluation>(x =>
+            {
+                // One equality: x0 + x1 - 3 = 0
+                var values = Vector<double>.Build.Dense(new[] { x[0] + x[1] - 3.0 });
+                return new ConstraintEvaluation(values, equalityCount: 1);
+            });
+
+            var lb = Vector<double>.Build.DenseOfArray(new[] { 0.0, 0.0 });
+            var ub = Vector<double>.Build.DenseOfArray(new[] { 10.0, 10.0 });
+            var x0 = Vector<double>.Build.DenseOfArray(new[] { 0.5, 0.5 });
+
+            var xout = Vector<double>.Build.Dense(2);
+            var info = new SqpInfo();
+            var lambda = Vector<double>.Build.Dense(0);
+            var actInd = new List<int>();
+
+            var options = new SqpOptions
+            {
+                Display = 2,
+                SqpLog = Console.Out,
+                QpLog = Console.Out,
+                TolArg = 1e-3,
+                TolObj = 1e-6,
+                TolCon = 1e-8,
+                Eps = 1e-12,
+                DiffMinChange = 1e-8,
+                DiffMaxChange = 1e-7,
+                MaxFunEvals = 500,
+                StepSize = 0.2,
+                PenaltyWeight = 50.0
+            };
+
+            Console.WriteLine("calling runSqp with problem data...");
+            Console.WriteLine($"  initial x0: {Format(x0)}");
+            Console.WriteLine("  objective : f(x) = (x0-1)^2 + (x1-2)^2");
+            Console.WriteLine("  equality  : x0 + x1 = 3");
+            Console.WriteLine($"  lower lb  : {Format(lb)}");
+            Console.WriteLine($"  upper ub  : {Format(ub)}");
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            RunSqp.runSqp(
+                ref xout,
+                ref info,
+                ref lambda,
+                ref actInd,
+                objective,
+                lb,
+                ub,
+                null,
+                null,
+                null,
+                null,
+                x0,
+                constraintEvaluator,
+                options,
+                null);
+            sw.Stop();
+
+            var optimum = Vector<double>.Build.DenseOfArray(new[] { 1.0, 2.0 });
+            var diff = xout - optimum;
+            var constraintResidual = xout[0] + xout[1] - 3.0;
+            var objValue = objective(xout);
+
+            Console.WriteLine("runSqp finished.");
+            Console.WriteLine($"  iterations:        {info.SqpCount}");
+            Console.WriteLine($"  fun evals:         {info.FunCount}");
+            Console.WriteLine($"  grad evals:        {info.GradCount}");
+            Console.WriteLine($"  solve time [ms]:   {sw.Elapsed.TotalMilliseconds.ToString(\"G17\", CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"  solution x:        {Format(xout)}");
+            Console.WriteLine($"  objective value:   {objValue.ToString(\"G17\", CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"  equality residual: {constraintResidual.ToString(\"G17\", CultureInfo.InvariantCulture)}");
+            Console.WriteLine($"  active set:        {Format(actInd)}");
+            Console.WriteLine($"  reference x*:      {Format(optimum)}");
+            Console.WriteLine($"  difference (x-x*): {Format(diff)} (L2={diff.L2Norm().ToString(\"G17\", CultureInfo.InvariantCulture)})");
         }
     }
 }

@@ -482,16 +482,11 @@ namespace Optimizer.Test
                 return dx0 * dx0 + dx1 * dx1;
             });
 
-            var constraintEvaluator = new Func<Vector<double>, ConstraintEvaluation>(x =>
-            {
-                // One equality: x0 + x1 - 3 = 0
-                var values = Vector<double>.Build.Dense(new[] { x[0] + x[1] - 3.0 });
-                return new ConstraintEvaluation(values, equalityCount: 1);
-            });
-
             var lb = Vector<double>.Build.DenseOfArray(new[] { 0.0, 0.0 });
             var ub = Vector<double>.Build.DenseOfArray(new[] { 10.0, 10.0 });
             var x0 = Vector<double>.Build.DenseOfArray(new[] { 0.5, 0.5 });
+            var equalityMatrix = Matrix<double>.Build.DenseOfArray(new[,] { { 1.0, 1.0 } });
+            var equalityVector = Vector<double>.Build.DenseOfArray(new[] { 3.0 });
 
             var xout = Vector<double>.Build.Dense(2);
             var info = new SqpInfo();
@@ -530,12 +525,12 @@ namespace Optimizer.Test
                 objective,
                 lb,
                 ub,
-                null,
-                null,
+                equalityMatrix,
+                equalityVector,
                 null,
                 null,
                 x0,
-                constraintEvaluator,
+                null,
                 options,
                 null);
             sw.Stop();

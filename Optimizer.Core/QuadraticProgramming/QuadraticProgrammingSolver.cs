@@ -29,7 +29,7 @@ namespace Optimizer.Core.QuadraticProgramming
             }
             var tolerance = options.Tolerance <= 0 ? 1e-8 : options.Tolerance;
             var maxIterations = Math.Max(1, options.MaxIterations);
-            var penaltyWeight = 100.0;
+            var penaltyWeight = 10.0;
             var stepSize = EstimateInitialStep(problem, penaltyWeight);
             var minStepSize = 1e-12;
 
@@ -76,6 +76,7 @@ namespace Optimizer.Core.QuadraticProgramming
                 }
 
                 ComputeGradient(problem, x, penaltyWeight, gradient, out var violation);
+                MakeEqualityFeasibleDirection(problem, gradient);
                 var objective = EvaluateObjective(problem, x);
                 if (!problem.IsMinimisation)
                 {
@@ -144,7 +145,7 @@ namespace Optimizer.Core.QuadraticProgramming
         {
             acceptedStepNorm = 0.0;
             var step = initialStep;
-            var armijo = 1e-4;
+            var armijo = 1e-6;
             var gradNorm = gradient.L2Norm();
 
             while (step >= minStep)
@@ -222,6 +223,24 @@ namespace Optimizer.Core.QuadraticProgramming
                 var inequalityResidual = problem.InequalityMatrix * point - problem.InequalityVector;
                 inequalityViolation = inequalityResidual.Enumerate().Where(v => v > 0).DefaultIfEmpty(0.0).Max();
             }
+        }
+
+        private static void MakeEqualityFeasibleDirection(QuadraticProblem problem, Vector<double> direction)
+        {
+            if (problem.EqualityMatrix == null || problem.EqualityVector == null || direction.Count == 0)
+            {
+                return;
+            }
+
+            var normalMatrix = problem.EqualityMatrix * problem.EqualityMatrix.Transpose();
+            if (normalMatrix.RowCount == 0)
+            {
+                return;
+            }
+
+            var projectionMultipliers = normalMatrix.Solve(problem.EqualityMatrix * direction);
+            var correction = problem.EqualityMatrix.TransposeThisAndMultiply(projectionMultipliers);
+            direction -= correction;
         }
 
         private static double EvaluateObjective(QuadraticProblem problem, Vector<double> x)

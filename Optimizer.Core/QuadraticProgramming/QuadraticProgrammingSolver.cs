@@ -29,8 +29,9 @@ namespace Optimizer.Core.QuadraticProgramming
             }
             var tolerance = options.Tolerance <= 0 ? 1e-8 : options.Tolerance;
             var maxIterations = Math.Max(1, options.MaxIterations);
-            var penaltyWeight = 100.0;
-            var stepSize = 1.0 / Math.Max(problem.Q.RowCount, 1);
+            var penaltyWeight = 10.0;
+            var stepSize = EstimateInitialStep(problem, penaltyWeight);
+            var minStepSize = 1e-12;
 
             var writer = ResolveWriter(options);
             writer?.WriteLine("[quadprog] Starting optimisation");
@@ -58,9 +59,12 @@ namespace Optimizer.Core.QuadraticProgramming
             writer?.WriteLine($"[quadprog] Initial iterate: {FormatVector(x)}");
 
             var gradient = Vector<double>.Build.Dense(dimension);
+            var candidate = Vector<double>.Build.Dense(dimension);
             var watch = Stopwatch.StartNew();
             var iterations = 0;
             var status = SolverResultStatus.IterationLimit;
+
+            var currentPenaltyObjective = EvaluatePenalty(problem, x, penaltyWeight);
 
             for (; iterations < maxIterations; iterations++)
             {
@@ -93,13 +97,23 @@ namespace Optimizer.Core.QuadraticProgramming
                     break;
                 }
 
-                var step = gradient * stepSize;
-                var stepNorm = step.L2Norm();
-                x -= step;
-                Project(problem, x);
+                var stepTaken = PerformBacktrackingStep(problem, x, gradient, penaltyWeight, stepSize, minStepSize, candidate, writer, tolerance, out var acceptedStepNorm, ref currentPenaltyObjective);
 
-                writer?.WriteLine(
-                    $"[quadprog]          step={FormatDouble(stepNorm)} -> new x={FormatVector(x)}");
+                if (!stepTaken)
+                {
+                    status = SolverResultStatus.IterationLimit;
+                    writer?.WriteLine("[quadprog] Step could not be taken (minimum step size reached).");
+                    iterations = iterationIndex;
+                    break;
+                }
+
+                writer?.WriteLine($"[quadprog]          step={FormatDouble(acceptedStepNorm)} -> new x={FormatVector(x)}");
+
+                if (iterationIndex % 25 == 0 && violation > tolerance)
+                {
+                    penaltyWeight *= 2.0;
+                    writer?.WriteLine($"[quadprog] Increasing penalty weight to {FormatDouble(penaltyWeight)}");
+                }
             }
 
             watch.Stop();
@@ -113,6 +127,45 @@ namespace Optimizer.Core.QuadraticProgramming
             writer?.WriteLine($"[quadprog] Finished with status={status} after {iterations} iterations, objective={FormatDouble(finalObjective)}");
 
             return new Solution(x.Clone(), finalObjective, status, iterations, watch.Elapsed);
+        }
+
+        private static bool PerformBacktrackingStep(
+            QuadraticProblem problem,
+            Vector<double> current,
+            Vector<double> gradient,
+            double penaltyWeight,
+            double initialStep,
+            double minStep,
+            Vector<double> scratch,
+            TextWriter writer,
+            double tolerance,
+            out double acceptedStepNorm,
+            ref double currentPenaltyObjective)
+        {
+            acceptedStepNorm = 0.0;
+            var step = initialStep;
+
+            while (step >= minStep)
+            {
+                scratch.SetSubVector(0, scratch.Count, current);
+                scratch -= gradient * step;
+                Project(problem, scratch);
+
+                var candidatePenalty = EvaluatePenalty(problem, scratch, penaltyWeight);
+
+                if (candidatePenalty <= currentPenaltyObjective - tolerance * step * gradient.L2Norm())
+                {
+                    current.SetSubVector(0, scratch.Count, scratch);
+                    acceptedStepNorm = (gradient * step).L2Norm();
+                    currentPenaltyObjective = candidatePenalty;
+                    return true;
+                }
+
+                step *= 0.5;
+                writer?.WriteLine($"[quadprog]          backtracking: step reduced to {FormatDouble(step)} (penalty {FormatDouble(candidatePenalty)})");
+            }
+
+            return false;
         }
 
         private static void ComputeGradient(
@@ -175,6 +228,31 @@ namespace Optimizer.Core.QuadraticProgramming
             return quadratic + linear;
         }
 
+        private static double EvaluatePenalty(QuadraticProblem problem, Vector<double> point, double penaltyWeight)
+        {
+            var value = EvaluateObjective(problem, point);
+
+            if (problem.EqualityMatrix != null && problem.EqualityVector != null)
+            {
+                var residual = problem.EqualityMatrix * point - problem.EqualityVector;
+                value += penaltyWeight * residual.DotProduct(residual);
+            }
+
+            if (problem.InequalityMatrix != null && problem.InequalityVector != null)
+            {
+                var residual = problem.InequalityMatrix * point - problem.InequalityVector;
+                foreach (var r in residual)
+                {
+                    if (r > 0)
+                    {
+                        value += penaltyWeight * r * r;
+                    }
+                }
+            }
+
+            return problem.IsMinimisation ? value : -value;
+        }
+
         private static void Project(QuadraticProblem problem, Vector<double> vector)
         {
             if (problem.LowerBounds != null)
@@ -227,6 +305,20 @@ namespace Optimizer.Core.QuadraticProgramming
         private static string FormatDouble(double value)
         {
             return value.ToString("G12", CultureInfo.InvariantCulture);
+        }
+
+        private static double EstimateInitialStep(QuadraticProblem problem, double penaltyWeight)
+        {
+            var normQ = problem.Q.L2Norm();
+            var normEq = problem.EqualityMatrix?.L2Norm() ?? 0.0;
+            var normIneq = problem.InequalityMatrix?.L2Norm() ?? 0.0;
+            var lipschitz = normQ + 2 * penaltyWeight * (normEq * normEq + normIneq * normIneq);
+            if (lipschitz <= 0)
+            {
+                lipschitz = 1.0;
+            }
+
+            return 1.0 / lipschitz;
         }
     }
 }

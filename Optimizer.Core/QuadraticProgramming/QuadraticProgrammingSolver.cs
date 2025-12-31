@@ -29,7 +29,7 @@ namespace Optimizer.Core.QuadraticProgramming
             }
             var tolerance = options.Tolerance <= 0 ? 1e-8 : options.Tolerance;
             var maxIterations = Math.Max(1, options.MaxIterations);
-            var penaltyWeight = 10.0;
+            var penaltyWeight = 100.0;
             var stepSize = EstimateInitialStep(problem, penaltyWeight);
             var minStepSize = 1e-12;
 
@@ -144,16 +144,19 @@ namespace Optimizer.Core.QuadraticProgramming
         {
             acceptedStepNorm = 0.0;
             var step = initialStep;
+            var armijo = 1e-4;
+            var gradNorm = gradient.L2Norm();
 
             while (step >= minStep)
             {
                 scratch.SetSubVector(0, scratch.Count, current);
                 scratch -= gradient * step;
                 Project(problem, scratch);
+                ProjectEqualities(problem, scratch);
 
                 var candidatePenalty = EvaluatePenalty(problem, scratch, penaltyWeight);
 
-                if (candidatePenalty <= currentPenaltyObjective - tolerance * step * gradient.L2Norm())
+                if (candidatePenalty <= currentPenaltyObjective - armijo * step * gradNorm * gradNorm)
                 {
                     current.SetSubVector(0, scratch.Count, scratch);
                     acceptedStepNorm = (gradient * step).L2Norm();
@@ -270,6 +273,27 @@ namespace Optimizer.Core.QuadraticProgramming
                     vector[i] = Math.Min(vector[i], problem.UpperBounds[i]);
                 }
             }
+
+            ProjectEqualities(problem, vector);
+        }
+
+        private static void ProjectEqualities(QuadraticProblem problem, Vector<double> vector)
+        {
+            if (problem.EqualityMatrix == null || problem.EqualityVector == null)
+            {
+                return;
+            }
+
+            var residual = problem.EqualityMatrix * vector - problem.EqualityVector;
+            if (residual.Count == 0 || residual.L2Norm() < 1e-12)
+            {
+                return;
+            }
+
+            var normalMatrix = problem.EqualityMatrix * problem.EqualityMatrix.Transpose();
+            var correctionMultipliers = normalMatrix.Solve(residual);
+            var correction = problem.EqualityMatrix.TransposeThisAndMultiply(correctionMultipliers);
+            vector -= correction;
         }
 
         private static TextWriter ResolveWriter(SolverOptions options)

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using MathNet.Numerics.LinearAlgebra;
+using System.Collections.Generic;
 using Optimizer.Core.Common;
 
 namespace Optimizer.Core.QuadraticProgramming
@@ -14,6 +15,60 @@ namespace Optimizer.Core.QuadraticProgramming
     /// </summary>
     public sealed class QuadraticProgrammingSolver
     {
+        /// <summary>
+        /// Legacy-compatible entry point mirroring the original template signature. Outputs the solution,
+        /// multipliers, and a basic active set while deferring the heavy lifting to the managed solver.
+        /// </summary>
+        public Solution Solve(
+            ref Vector<double> x,
+            ref Vector<double> lambda,
+            ref List<int> act_ind,
+            ref Matrix<double> T,
+            Matrix<double> H,
+            Vector<double> f,
+            Matrix<double> Aieq,
+            Vector<double> bieq,
+            Matrix<double> Aeq,
+            Vector<double> beq,
+            Vector<double> lbd,
+            Vector<double> ubd,
+            Vector<double> x0,
+            int verbosity = 0,
+            double EPS = 1e-16,
+            double BIG = 1e+99,
+            int MAXITER = 1000,
+            SolverOptions options = null)
+        {
+            options ??= new SolverOptions
+            {
+                Tolerance = EPS,
+                MaxIterations = MAXITER,
+                Verbose = verbosity > 0,
+                DiagnosticsWriter = verbosity > 0 ? Console.Out : null
+            };
+
+            var problem = new QuadraticProblem(
+                H,
+                f,
+                Aieq,
+                bieq,
+                isMinimisation: true,
+                equalityMatrix: Aeq,
+                equalityVector: beq,
+                lowerBounds: lbd,
+                upperBounds: ubd,
+                initialGuess: x0);
+
+            var solution = Solve(problem, options);
+
+            x = solution.OptimalX;
+            lambda = BuildMultipliers(Aeq, beq, Aieq, bieq, x, EPS);
+            act_ind = BuildActiveSet(Aeq, beq, Aieq, bieq, x, EPS);
+            T = Matrix<double>.Build.Dense(0, 0); // placeholder tableau to preserve signature
+
+            return solution;
+        }
+
         public Solution Solve(QuadraticProblem problem, SolverOptions options = null)
         {
             if (problem == null)
@@ -362,6 +417,55 @@ namespace Optimizer.Core.QuadraticProgramming
             }
 
             return 1.0 / lipschitz;
+        }
+
+        private static Vector<double> BuildMultipliers(
+            Matrix<double> Aeq,
+            Vector<double> beq,
+            Matrix<double> Aieq,
+            Vector<double> bieq,
+            Vector<double> x,
+            double tolerance)
+        {
+            var total = (Aeq?.RowCount ?? 0) + (Aieq?.RowCount ?? 0);
+            var multipliers = Vector<double>.Build.Dense(total);
+            // This simplified solver does not compute duals; return zeros sized to constraints.
+            return multipliers;
+        }
+
+        private static List<int> BuildActiveSet(
+            Matrix<double> Aeq,
+            Vector<double> beq,
+            Matrix<double> Aieq,
+            Vector<double> bieq,
+            Vector<double> x,
+            double tolerance)
+        {
+            var active = new List<int>();
+            var cursor = 0;
+
+            if (Aeq != null && beq != null)
+            {
+                for (var i = 0; i < Aeq.RowCount; i++)
+                {
+                    active.Add(cursor + i);
+                }
+                cursor += Aeq.RowCount;
+            }
+
+            if (Aieq != null && bieq != null)
+            {
+                var residual = Aieq * x - bieq;
+                for (var i = 0; i < residual.Count; i++)
+                {
+                    if (Math.Abs(residual[i]) <= tolerance)
+                    {
+                        active.Add(cursor + i);
+                    }
+                }
+            }
+
+            return active;
         }
     }
 }

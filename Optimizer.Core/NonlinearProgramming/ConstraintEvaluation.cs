@@ -14,6 +14,14 @@ namespace Optimizer.Core.NonlinearProgramming
             Jacobian = jacobian;
         }
 
+        public ConstraintEvaluation(double[] values, int equalityCount, double[][] jacobian = null)
+            : this(
+                values != null ? Vector<double>.Build.DenseOfArray(values) : null,
+                equalityCount,
+                jacobian != null ? Matrix<double>.Build.DenseOfRowArrays(jacobian) : null)
+        {
+        }
+
         public Vector<double> Values { get; }
 
         public int EqualityCount { get; }

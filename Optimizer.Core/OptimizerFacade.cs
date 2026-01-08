@@ -12,6 +12,69 @@ namespace Optimizer.Core
 {
     public static class Optimizer
     {
+        public static int quadprog(
+            ref double[] x,
+            ref double[] lambda,
+            ref int[] act_ind,
+            ref double[][] T,
+            double[][] H,
+            double[] f,
+            double[][] Aieq,
+            double[] bieq,
+            double[][] Aeq,
+            double[] beq,
+            double[] lbd,
+            double[] ubd,
+            double[] x0,
+            int verbosity = 0,
+            double EPS = 1.0e-16,
+            double BIG = 1.0e+99,
+            int MAXITER = 1000,
+            byte[] cdbg = default)
+        {
+            var solver = new QuadraticProgrammingSolver();
+            var matrixH = Matrix<double>.Build.DenseOfRowArrays(H ?? Array.Empty<double[]>());
+            var vectorF = Vector<double>.Build.DenseOfArray(f ?? Array.Empty<double>());
+            var matrixIeq = Aieq != null ? Matrix<double>.Build.DenseOfRowArrays(Aieq) : null;
+            var vectorIeq = bieq != null ? Vector<double>.Build.DenseOfArray(bieq) : null;
+            var matrixEq = Aeq != null ? Matrix<double>.Build.DenseOfRowArrays(Aeq) : null;
+            var vectorEq = beq != null ? Vector<double>.Build.DenseOfArray(beq) : null;
+            var lower = lbd != null ? Vector<double>.Build.DenseOfArray(lbd) : null;
+            var upper = ubd != null ? Vector<double>.Build.DenseOfArray(ubd) : null;
+            var guess = x0 != null ? Vector<double>.Build.DenseOfArray(x0) : null;
+
+            var xVector = x != null ? Vector<double>.Build.DenseOfArray(x) : Vector<double>.Build.Dense(vectorF.Count);
+            var lambdaVector = lambda != null ? Vector<double>.Build.DenseOfArray(lambda) : Vector<double>.Build.Dense(0);
+            var actList = act_ind != null ? new List<int>(act_ind) : new List<int>();
+            var tableau = Matrix<double>.Build.Dense(0, 0);
+
+            var solution = solver.Solve(
+                ref xVector,
+                ref lambdaVector,
+                ref actList,
+                ref tableau,
+                matrixH,
+                vectorF,
+                matrixIeq,
+                vectorIeq,
+                matrixEq,
+                vectorEq,
+                lower,
+                upper,
+                guess,
+                verbosity,
+                EPS,
+                BIG,
+                MAXITER);
+
+            x = xVector?.ToArray();
+            lambda = lambdaVector?.ToArray();
+            act_ind = actList.ToArray();
+            T = tableau.RowCount > 0 ? tableau.ToRowArrays() : Array.Empty<double[]>();
+
+            return solution?.Iterations ?? 0;
+        }
+
         public static Solution LinProg(double[,] a, double[] b, double[] c, SolverOptions options = null)
         {
             var solver = new LinearProgrammingSolver();

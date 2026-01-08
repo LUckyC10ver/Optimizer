@@ -11,6 +11,76 @@ namespace Optimizer.Core.NonlinearProgramming
     public static class RunSqp
     {
         public static void runSqp(
+            out double[] xout,
+            out SqpInfo info,
+            ref double[] lambda,
+            ref int[] act_ind,
+            Func<double[], double> obj,
+            double[] lb,
+            double[] ub,
+            double[][] Aequ,
+            double[] bequ,
+            double[][] Aieq,
+            double[] bieq,
+            double[] X_orig,
+            Func<double[], ConstraintEvaluation> con,
+            SqpOptions opt,
+            double[][] Hess = default)
+        {
+            if (obj == null)
+            {
+                throw new OptimizationException("Objective function delegate cannot be null.");
+            }
+
+            if (X_orig == null)
+            {
+                throw new OptimizationException("X_orig cannot be null.");
+            }
+
+            var initial = Vector<double>.Build.DenseOfArray(X_orig);
+            var lower = lb != null ? Vector<double>.Build.DenseOfArray(lb) : null;
+            var upper = ub != null ? Vector<double>.Build.DenseOfArray(ub) : null;
+            var matrixEq = Aequ != null ? Matrix<double>.Build.DenseOfRowArrays(Aequ) : null;
+            var vectorEq = bequ != null ? Vector<double>.Build.DenseOfArray(bequ) : null;
+            var matrixIeq = Aieq != null ? Matrix<double>.Build.DenseOfRowArrays(Aieq) : null;
+            var vectorIeq = bieq != null ? Vector<double>.Build.DenseOfArray(bieq) : null;
+
+            Vector<double> xVector = null;
+            var infoLocal = new SqpInfo();
+            var lambdaVector = lambda != null ? Vector<double>.Build.DenseOfArray(lambda) : Vector<double>.Build.Dense(0);
+            var actList = act_ind != null ? new List<int>(act_ind) : new List<int>();
+
+            Func<Vector<double>, double> objective = x => obj(x.ToArray());
+            Func<Vector<double>, ConstraintEvaluation> constraintEvaluator = null;
+            if (con != null)
+            {
+                constraintEvaluator = x => con(x.ToArray());
+            }
+
+            runSqp(
+                ref xVector,
+                ref infoLocal,
+                ref lambdaVector,
+                ref actList,
+                objective,
+                lower,
+                upper,
+                matrixEq,
+                vectorEq,
+                matrixIeq,
+                vectorIeq,
+                initial,
+                constraintEvaluator,
+                opt,
+                Hess != null ? Matrix<double>.Build.DenseOfRowArrays(Hess) : null);
+
+            xout = xVector?.ToArray();
+            info = infoLocal;
+            lambda = lambdaVector?.ToArray();
+            act_ind = actList.ToArray();
+        }
+
+        public static void runSqp(
             ref Vector<double> xout,
             ref SqpInfo info,
             ref Vector<double> lambda,
